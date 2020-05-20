@@ -95,7 +95,7 @@ class Annotator():
         faces = self.detect_faces(image)
         print(len(faces))
 
-        output_path = self.__get_output_path(image)
+        output_path = self.__get_output_path(image, path)
         shape = image.shape
         writer = Writer(output_path, shape[1], shape[0], shape[2])
 
@@ -114,7 +114,8 @@ class Annotator():
                 saved_count = saved_count + 1
 
         if 0 < saved_count:
-            cv2.imwrite(output_path, image, [cv2.IMWRITE_JPEG_QUALITY, 100])
+            if path != output_path:
+                cv2.imwrite(output_path, image, [cv2.IMWRITE_JPEG_QUALITY, 100])
             name = os.path.splitext(output_path)
             writer.save('{}.xml'.format(name[0]))
 
@@ -140,7 +141,10 @@ class Annotator():
         _, ext = os.path.splitext(path)
         return ext in ['.xml']
 
-    def __get_output_path(self, image):
+    def __get_output_path(self, image, path=None):
+        if self.config.keep_file_name and path is not None:
+            return path
+
         md5 = hashlib.md5(image).hexdigest()
         return '{}/{}.jpg'.format(self.output_dir, md5, 'jpg')
 
@@ -243,6 +247,7 @@ if __name__ == '__main__':
     parser.add_argument('--detectron_score_thresh_test', type=float, default=0.5, help='detect boxes with score more than this')
     parser.add_argument('--detectron_num_classes', type=int, default=1, help='class num in model_detectron')
     parser.add_argument('--cpu', action='store_true', help='use cpu')
+    parser.add_argument('--keep_file_name', action='store_true', help='keep original file name to save')
     args = parser.parse_args()
 
     annotator = Annotator(args)
