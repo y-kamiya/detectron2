@@ -278,7 +278,7 @@ class COCOEvaluator(DatasetEvaluator):
         for idx, name in enumerate(class_names):
             # area range index 0: all area ranges
             # max dets index -1: typically 100 per image
-            precision = precisions[:, :, idx, 0, -1]
+            precision = precisions[0, :, idx, 0, -1]
             precision = precision[precision > -1]
             ap = np.mean(precision) if precision.size else float("nan")
             results_per_category.append(("{}".format(name), float(ap * 100)))
@@ -294,9 +294,37 @@ class COCOEvaluator(DatasetEvaluator):
             headers=["category", "AP"] * (N_COLS // 2),
             numalign="left",
         )
-        self._logger.info("Per-category {} AP: \n".format(iou_type) + table)
-
+        self._logger.info("Per-category {} AP on iouThrs=0.5: \n".format(iou_type) + table)
         results.update({"AP-" + name: ap for name, ap in results_per_category})
+
+
+
+
+        recalls = coco_eval.eval["recall"]
+        # recall has dims (iou, cls, area range, max dets)
+        assert len(class_names) == recalls.shape[1]
+
+        ar_results_per_category = []
+        for idx, name in enumerate(class_names):
+            # area range index 0: all area ranges
+            # max dets index -1: typically 100 per image
+            recall = recalls[0, idx, 0, -1]
+            ar = recall if recall > -1 else float("nan")
+            ar_results_per_category.append(("{}".format(name), float(ar * 100)))
+
+        # tabulate it
+        N_COLS = min(6, len(ar_results_per_category) * 2)
+        results_flatten = list(itertools.chain(*ar_results_per_category))
+        results_2d = itertools.zip_longest(*[results_flatten[i::N_COLS] for i in range(N_COLS)])
+        table = tabulate(
+            results_2d,
+            tablefmt="pipe",
+            floatfmt=".3f",
+            headers=["category", "AR"] * (N_COLS // 2),
+            numalign="left",
+        )
+        self._logger.info("Per-category {} AR on iouThrs=0.5: \n".format(iou_type) + table)
+
         return results
 
 
