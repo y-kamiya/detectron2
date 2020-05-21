@@ -15,6 +15,8 @@ setup_logger()
 from detectron2.engine import DefaultPredictor
 from detectron2.config import get_cfg
 from detectron2 import model_zoo
+from detectron2.data.datasets import register_coco_instances
+from detectron2.data import DatasetCatalog, MetadataCatalog
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 
@@ -51,10 +53,15 @@ class Annotator():
             cfg.merge_from_file(model_zoo.get_config_file("COCO-Detection/faster_rcnn_X_101_32x8d_FPN_3x.yaml"))
             cfg.MODEL.ROI_HEADS.NUM_CLASSES = config.detectron_num_classes
             cfg.MODEL.DEVICE = 'cpu' if config.cpu else 'cuda'
-            cfg.MODEL.WEIGHTS = config.model_detectron
+            cfg.MODEL.WEIGHTS = os.path.join(config.model_detectron, 'model_final.pth')
             cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = config.detectron_score_thresh_test
 
             self.predictor = DefaultPredictor(cfg)
+
+            json_path = os.path.join(config.model_detectron, 'annotations.json')
+            register_coco_instances('test', {}, json_path, config.model_detectron)
+            DatasetCatalog.get('test')
+            self.metadata = MetadataCatalog.get('test')
 
     def annotate(self, path):
         if not self.config.model_detectron and not os.path.isfile(self.CASCADE_FILE):
@@ -68,14 +75,19 @@ class Annotator():
         if self.config.model_detectron:
             outputs = self.predictor(image)
             boxes = outputs['instances'].get('pred_boxes')
+
+            cls2label = self.metadata.get('thing_classes')
+            classes = outputs['instances'].get('pred_classes')
+            labels = [cls2label[cls] if cls < len(cls2label) else None for cls in classes]
+
             ret = []
-            for box in boxes:
-                ret.append([
+            for i, box in enumerate(boxes):
+                ret.append(([
                     int(box[0].item()),
                     int(box[1].item()),
                     int((box[2]-box[0]).item()),
                     int((box[3]-box[1]).item())
-                ])
+                ], labels[i]))
             return ret
 
         cascade = cv2.CascadeClassifier(self.CASCADE_FILE)
@@ -93,14 +105,13 @@ class Annotator():
             image = cv2.imread(path, cv2.IMREAD_COLOR)
 
         faces = self.detect_faces(image)
-        print(len(faces))
 
         output_path = self.__get_output_path(image, path)
         shape = image.shape
         writer = Writer(output_path, shape[1], shape[0], shape[2])
 
         saved_count = 0
-        for (x, y, w, h) in faces:
+        for (x, y, w, h), label in faces:
             xmax = x + w
             ymax = y + h
             if not self.config.all_faces:
@@ -108,7 +119,7 @@ class Annotator():
                 cv2.rectangle(image_tmp, (x, y), (xmax, ymax), (0, 0, 255), 2)
                 cv2.imshow("annotation", image_tmp)
 
-            label = self.get_label()
+            label = self.get_label(label)
             if label is not None:
                 writer.addObject(label, x, y, xmax, ymax)
                 saved_count = saved_count + 1
@@ -119,9 +130,9 @@ class Annotator():
             name = os.path.splitext(output_path)
             writer.save('{}.xml'.format(name[0]))
 
-    def get_label(self):
+    def get_label(self, label=None):
         if self.config.all_faces:
-            return 'face'
+            return 'face' if label is None else label
 
         key = chr(cv2.waitKey(0))
         if key not in self.KEY_LABEL_MAP:
@@ -240,7 +251,7 @@ if __name__ == '__main__':
     parser.add_argument('--difference_threshold', type=int, default=20, help='sampling when image difference is over this value from last sampling image')
     parser.add_argument('--extract_labels', action='store_true', help='extract label from annotation file')
     parser.add_argument('--fix', action='store_true', help='')
-    parser.add_argument('--all_faces', action='store_true', help='annotate all faces as "face"')
+    parser.add_argument('--all_faces', action='store_true', help='annotate all faces')
     parser.add_argument('--recursive', action='store_true', help='search target files recursively')
     parser.add_argument('--output_dir', default=None, help='path to output directory')
     parser.add_argument('--model_detectron', default=None, help='path to model file for detectron')
