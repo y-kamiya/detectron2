@@ -111,7 +111,14 @@ class Annotator():
         writer = Writer(output_path, shape[1], shape[0], shape[2])
 
         saved_count = 0
-        for (x, y, w, h), label in faces:
+        for entry in faces:
+            if self.config.model_detectron:
+                x, y, w, h = entry[0]
+                label = entry[1]
+            else:
+                x, y, w, h = entry
+                label = 'none'
+
             xmax = x + w
             ymax = y + h
             if not self.config.all_faces:
